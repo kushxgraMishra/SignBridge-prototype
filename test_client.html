@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SignBridge Live Test</title>
+<style>
+  body {
+    font-family: -apple-system, sans-serif;
+    background: #111;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+  }
+  video {
+    border-radius: 12px;
+    transform: scaleX(-1); /* mirror, feels natural */
+  }
+  #prediction {
+    margin-top: 1.5rem;
+    font-size: 2rem;
+    font-weight: 600;
+  }
+  #confidence {
+    font-size: 1rem;
+    color: #999;
+  }
+  button {
+    margin-top: 1rem;
+    padding: 0.6rem 1.2rem;
+    font-size: 1rem;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+  }
+  #status {
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    color: #666;
+  }
+</style>
+</head>
+<body>
+
+<h2>SignBridge — Live Test</h2>
+<video id="video" width="480" height="360" autoplay muted playsinline></video>
+<canvas id="canvas" width="480" height="360" style="display:none;"></canvas>
+
+<div id="prediction">—</div>
+<div id="confidence"></div>
+
+<button id="startBtn">Start</button>
+<button id="resetBtn">Reset Buffer</button>
+<div id="status">Not connected</div>
+
+<script>
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const predictionEl = document.getElementById('prediction');
+const confidenceEl = document.getElementById('confidence');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+let ws = null;
+let sendInterval = null;
+
+async function startCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } });
+  video.srcObject = stream;
+}
+
+function connectWebSocket() {
+  ws = new WebSocket("ws://127.0.0.1:8000/ws/predict");
+
+  ws.onopen = () => {
+    statusEl.textContent = "Connected — streaming frames";
+    sendInterval = setInterval(sendFrame, 100); // ~10 fps
+  };
+
+  ws.onmessage = (event) => {
+    const data = JSON.parse(event.data);
+    if (data.type === "prediction") {
+      predictionEl.textContent = data.sign;
+      confidenceEl.textContent = `confidence: ${(data.confidence * 100).toFixed(1)}%`;
+    }
+  };
+
+  ws.onclose = () => {
+    statusEl.textContent = "Disconnected";
+    clearInterval(sendInterval);
+  };
+
+  ws.onerror = (err) => {
+    statusEl.textContent = "WebSocket error — check console";
+    console.error(err);
+  };
+}
+
+function sendFrame() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+  ws.send(JSON.stringify({
+    type: "frame",
+    image: dataUrl
+  }));
+}
+
+startBtn.addEventListener('click', async () => {
+  await startCamera();
+  connectWebSocket();
+  startBtn.disabled = true;
+});
+
+resetBtn.addEventListener('click', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: "reset" }));
+    predictionEl.textContent = "—";
+    confidenceEl.textContent = "";
+  }
+});
+</script>
+
+</body>
+</html>
