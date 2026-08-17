@@ -1,1 +1,9 @@
-
+fastapi
+uvicorn[standard]
+opencv-python-headless
+mediapipe
+onnxruntime
+numpy
+torch
+scikit-learn
+python-multipart
